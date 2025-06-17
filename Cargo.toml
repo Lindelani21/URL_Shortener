@@ -1,22 +1,18 @@
-[package]
-name = "url_shortener"
-version = "0.1.0"
-edition = "2021"
-authors = ["Your Name <your.email@example.com>"]
-description = "A simple URL shortener application"
-license = "MIT"
-tokio = { version = "1.0", features = ["full"] }
-
-[dependencies]
-actix-web = "4.0"  
-clap = { version = "4.0", features = ["derive"] }
-nanoid = "0.4.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-thiserror = "2.0.12"
-
 [lib]
 name = "url_shortener"
 path = "src/lib.rs"
 
+[package]
+name = "url_shortener"
+version = "0.1.0"
+edition = "2021"
 
+[dependencies]
+actix-web = "4.0"
+clap = { version = "4.0", features = ["derive"] }
+nanoid = "0.4.0"
+parking_lot = "0.12"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0.12"
+tokio = { version = "1.0", features = ["full"] }
