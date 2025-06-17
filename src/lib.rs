@@ -1,9 +1,11 @@
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
+use std::sync::Arc;
 use thiserror::Error;
-use serde::{Serialize, Deserialize};
 
 const DATA_FILE: &str = "data.json";
 
@@ -22,9 +24,9 @@ struct StoredData {
     urls: HashMap<String, String>,
 }
 
-#[derive(Clone)] 
+#[derive(Clone)]
 pub struct UrlShortener {
-    urls: HashMap<String, String>,
+    urls: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl UrlShortener {
@@ -42,34 +44,39 @@ impl UrlShortener {
             HashMap::new()
         };
 
-        Ok(UrlShortener { urls })
+        Ok(UrlShortener {
+            urls: Arc::new(Mutex::new(urls)),
+        })
     }
 
-    pub fn shorten(&mut self, url: &str) -> Result<String, UrlShortenerError> {
+    pub fn shorten(&self, url: &str) -> Result<String, UrlShortenerError> {
         if !url.starts_with("http://") && !url.starts_with("https://") {
             return Err(UrlShortenerError::InvalidUrl);
         }
 
+        let mut urls = self.urls.lock();
         let short_code = nanoid::nanoid!(6);
-        self.urls.insert(short_code.clone(), url.to_string());
+        urls.insert(short_code.clone(), url.to_string());
         self.save()?;
         Ok(short_code)
     }
 
     pub fn expand(&self, short_code: &str) -> Result<String, UrlShortenerError> {
-        self.urls
-            .get(short_code)
+        let urls = self.urls.lock();
+        urls.get(short_code)
             .map(|url| url.to_string())
             .ok_or(UrlShortenerError::UrlNotFound)
     }
 
-    pub fn list(&self) -> Vec<(&String, &String)> {
-        self.urls.iter().collect()
+    pub fn list(&self) -> Vec<(String, String)> {
+        let urls = self.urls.lock();
+        urls.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
 
     fn save(&self) -> Result<(), UrlShortenerError> {
+        let urls = self.urls.lock();
         let data = StoredData {
-            urls: self.urls.clone(),
+            urls: urls.clone(),
         };
         let json = serde_json::to_string_pretty(&data)
             .map_err(|e| UrlShortenerError::StorageError(e.to_string()))?;
