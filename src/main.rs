@@ -4,16 +4,14 @@ use std::sync::Arc;
 use url_shortener::UrlShortener;
 
 #[derive(Parser)]
-#[command(version, about)]
+#[command(version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Run as web server
     #[arg(short, long)]
     server: bool,
 
-    /// Server port [default: 8000]
     #[arg(short, long, default_value_t = 8000)]
     port: u16,
 }
@@ -38,46 +36,52 @@ async fn redirect(
     }
 }
 
-async fn run_web_server(shortener: Arc<UrlShortener>, port: u16) -> std::io::Result<()> {
-    println!("🌐 Server running at: http://localhost:{port}");
-    HttpServer::new(move || {
-        App::new()
-            .app_data(web::Data::new(shortener.clone()))
-            .service(redirect)
-    })
-    .bind(("0.0.0.0", port))?
-    .run()
-    .await
-}
-
 #[tokio::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    let shortener = Arc::new(UrlShortener::new().expect("Failed to initialize"));
 
     if cli.server {
-        run_web_server(shortener, cli.port).await
+        let shortener = Arc::new(UrlShortener::new()?);
+        println!("Server running at: http://localhost:{}", cli.port);
+        println!("Data file: {}", std::env::current_dir()?.join("data.json").display());
+        
+        HttpServer::new(move || {
+            App::new()
+                .app_data(web::Data::new(shortener.clone()))
+                .service(redirect)
+        })
+        .bind(("0.0.0.0", cli.port))?
+        .run()
+        .await?;
     } else {
+        let shortener = UrlShortener::new()?;
         match cli.command {
             Some(Commands::Shorten { url }) => {
-                match shortener.shorten(&url) {
-                    Ok(code) => println!("🔗 http://localhost:{}/{code}", cli.port),
-                    Err(e) => eprintln!("❌ {e}"),
-                }
+                let code = shortener.shorten(&url)?;
+                println!(" Shortened URL created:");
+                println!(" Short code: {}", code);
+                println!(" Full URL: http://localhost:{}/{}", cli.port, code);
+                println!(" Stored in: {}", std::env::current_dir()?.join("data.json").display());
             }
             Some(Commands::Expand { code }) => {
-                match shortener.expand(&code) {
-                    Ok(url) => println!("🔗 {url}"),
-                    Err(e) => eprintln!("❌ {e}"),
-                }
+                let url = shortener.expand(&code)?;
+                println!("Original URL: {}", url);
             }
             Some(Commands::List) => {
+                println!("All shortened URLs:");
                 for (code, url) in shortener.list() {
-                    println!("➡️  http://localhost:{}/{code} -> {url}", cli.port);
+                    println!("  {} -> {}", code, url);
                 }
             }
-            None => eprintln!("ℹ️  Use --help for usage"),
+            None => {
+                eprintln!("No command provided");
+                eprintln!("Usage:");
+                eprintln!("  cargo run -- shorten <URL>");
+                eprintln!("  cargo run -- expand <CODE>");
+                eprintln!("  cargo run -- list");
+                eprintln!("  cargo run -- --server");
+            }
         }
-        Ok(())
     }
+    Ok(())
 }
