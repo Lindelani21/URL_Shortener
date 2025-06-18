@@ -19,6 +19,18 @@ pub enum UrlShortenerError {
     StorageError(String),
 }
 
+impl From<std::io::Error> for UrlShortenerError {
+    fn from(err: std::io::Error) -> Self {
+        UrlShortenerError::StorageError(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for UrlShortenerError {
+    fn from(err: serde_json::Error) -> Self {
+        UrlShortenerError::StorageError(err.to_string())
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct StoredData {
     urls: HashMap<String, String>,
@@ -32,14 +44,10 @@ pub struct UrlShortener {
 impl UrlShortener {
     pub fn new() -> Result<Self, UrlShortenerError> {
         let urls = if Path::new(DATA_FILE).exists() {
-            let mut file = File::open(DATA_FILE)
-                .map_err(|e| UrlShortenerError::StorageError(e.to_string()))?;
+            let mut file = File::open(DATA_FILE)?;
             let mut contents = String::new();
-            file.read_to_string(&mut contents)
-                .map_err(|e| UrlShortenerError::StorageError(e.to_string()))?;
-            serde_json::from_str::<StoredData>(&contents)
-                .map_err(|e| UrlShortenerError::StorageError(e.to_string()))?
-                .urls
+            file.read_to_string(&mut contents)?;
+            serde_json::from_str::<StoredData>(&contents)?.urls
         } else {
             HashMap::new()
         };
@@ -54,9 +62,11 @@ impl UrlShortener {
             return Err(UrlShortenerError::InvalidUrl);
         }
 
-        let mut urls = self.urls.lock();
         let short_code = nanoid::nanoid!(6);
-        urls.insert(short_code.clone(), url.to_string());
+        {
+            let mut urls = self.urls.lock();
+            urls.insert(short_code.clone(), url.to_string());
+        }
         self.save()?;
         Ok(short_code)
     }
@@ -78,18 +88,15 @@ impl UrlShortener {
         let data = StoredData {
             urls: urls.clone(),
         };
-        let json = serde_json::to_string_pretty(&data)
-            .map_err(|e| UrlShortenerError::StorageError(e.to_string()))?;
+        let json = serde_json::to_string_pretty(&data)?;
 
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
-            .open(DATA_FILE)
-            .map_err(|e| UrlShortenerError::StorageError(e.to_string()))?;
+            .open(DATA_FILE)?;
 
-        file.write_all(json.as_bytes())
-            .map_err(|e| UrlShortenerError::StorageError(e.to_string()))?;
+        file.write_all(json.as_bytes())?;
         Ok(())
     }
 }
